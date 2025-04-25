@@ -2,12 +2,15 @@ import os
 import cv2
 import numpy as np
 import face_recognition
+from flask import Flask, render_template, request
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.utils.multiclass import unique_labels
 
+app = Flask(__name__)
+
 def load_dataset(folder_path):
-    images, labels, label_names = [], [], []
+    images, labels = [], []
     label_map = {}
 
     for i, person_name in enumerate(sorted(os.listdir(folder_path))):
@@ -43,43 +46,64 @@ def filter_valid_encodings(encodings, labels):
             filtered_labels.append(label)
     return filtered_encodings, filtered_labels
 
-def main():
-    print("🔍 Loading training data...")
+def recognize_faces():
+    output = []
+
+    output.append("Loading the training data...")
     train_images, train_labels, label_map = load_dataset("dataset/train")
     train_encodings = extract_encodings(train_images)
     train_encodings, train_labels = filter_valid_encodings(train_encodings, train_labels)
-    print(f"✅ {len(train_encodings)} valid face encodings found for training.")
+    output.append(f"{len(train_encodings)} valid face encodings found for training.")
 
     if not train_encodings:
-        print("❌ No valid face encodings found in training set.")
-        return
+        return "No valid face encodings found in training set."
 
-    print("🤖 Training KNN classifier...")
     knn = KNeighborsClassifier(n_neighbors=1)
     knn.fit(train_encodings, train_labels)
+    output.append("Training KNN classifier...")
 
-    print("🧪 Loading test data...")
+    output.append("Loading test data...")
     test_images, test_labels, _ = load_dataset("dataset/test")
     test_encodings = extract_encodings(test_images)
     test_encodings, test_labels = filter_valid_encodings(test_encodings, test_labels)
-    print(f"🧬 {len(test_encodings)} valid face encodings found for testing.")
+    output.append(f"{len(test_encodings)} valid face encodings found for testing.")
 
     if not test_encodings:
-        print("❌ No valid face encodings found in test set.")
-        return
+        return "No valid face encodings found in test set."
 
-    print("🎯 Predicting and evaluating...")
+    output.append("Predicting and evaluating...")
     predictions = knn.predict(test_encodings)
+    probabilities = knn.predict_proba(test_encodings)
 
-    print("\n📊 Classification Report:")
+    output.append("\nMatched Results with Confidence:")
+    for idx, (pred_label, probs) in enumerate(zip(predictions, probabilities)):
+        try:
+            class_index = list(knn.classes_).index(pred_label)
+            confidence = probs[class_index] * 100
+            matched_name = label_map[pred_label]
+            output.append(f"Test Image {idx + 1}: Matched with {matched_name} ({confidence:.2f}% confidence)")
+        except ValueError:
+            output.append(f"Test Image {idx + 1}: Unknown person (No matching class found)")
+
+    output.append("\nThe Classification Report:")
     labels_present = unique_labels(test_labels, predictions)
-    print(classification_report(
+    report = classification_report(
         test_labels, predictions,
         labels=labels_present,
-        target_names=[label_map[i] for i in labels_present]
-    ))
+        target_names=[label_map[i] for i in labels_present],
+        zero_division=0
+    )
+    output.append(report)
+    output.append(f"Accuracy: {accuracy_score(test_labels, predictions) * 100:.2f}%")
 
-    print(f"🎯 Accuracy: {accuracy_score(test_labels, predictions) * 100:.2f}%")
+    return "\n".join(output)
 
-if __name__ == "__main__":
-    main()
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    result = None
+    if request.method == 'POST':
+        result = recognize_faces()
+    return render_template('index1.html', result=result)
+
+if __name__ == '__main__':
+    app.run(debug=True)
