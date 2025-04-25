@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: image_recognition
+    plan: free
+    runtime: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python app.py"
+    repo: https://github.com/NandiniSaxena/Face-Recognition-System.git
+    branch: main
+
